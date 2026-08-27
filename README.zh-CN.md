@@ -30,11 +30,11 @@
 
 ### 未使用 AgentSpecGuard
 
-![未使用 AgentSpecGuard](./assets/without-agent-spec-guard-zh.svg)
+![未使用 AgentSpecGuard](./assets/without-agent-spec-guard-zh.webp)
 
 ### 使用 AgentSpecGuard
 
-![使用 AgentSpecGuard](./assets/with-agent-spec-guard-zh.svg)
+![使用 AgentSpecGuard](./assets/with-agent-spec-guard-zh.webp)
 
 如果你的需求本身已经足够明确，AgentSpecGuard 会 **一个问题都不问，直接执行**。
 
@@ -180,10 +180,10 @@ AgentSpecGuard 故意保持为 instruction-only Skill：
 AgentSpecGuard/
 ├── SKILL.md
 ├── assets/
-│   ├── without-agent-spec-guard-en.svg
-│   ├── with-agent-spec-guard-en.svg
-│   ├── without-agent-spec-guard-zh.svg
-│   └── with-agent-spec-guard-zh.svg
+│   ├── without-agent-spec-guard-en.webp
+│   ├── with-agent-spec-guard-en.webp
+│   ├── without-agent-spec-guard-zh.webp
+│   └── with-agent-spec-guard-zh.webp
 ├── agents/
 │   └── openai.yaml
 ├── README.md

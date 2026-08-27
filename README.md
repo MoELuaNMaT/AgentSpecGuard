@@ -28,11 +28,11 @@ It asks only when the missing answer would materially change the result. Once th
 
 ### Without AgentSpecGuard
 
-![Without AgentSpecGuard](./assets/without-agent-spec-guard-en.svg)
+![Without AgentSpecGuard](./assets/without-agent-spec-guard-en.webp)
 
 ### With AgentSpecGuard
 
-![With AgentSpecGuard](./assets/with-agent-spec-guard-en.svg)
+![With AgentSpecGuard](./assets/with-agent-spec-guard-en.webp)
 
 If the request is already clear, AgentSpecGuard asks **zero questions** and proceeds directly.
 
@@ -159,10 +159,10 @@ The project is optimized for personal and small-team work, where agents frequent
 AgentSpecGuard/
 ├── SKILL.md
 ├── assets/
-│   ├── without-agent-spec-guard-en.svg
-│   ├── with-agent-spec-guard-en.svg
-│   ├── without-agent-spec-guard-zh.svg
-│   └── with-agent-spec-guard-zh.svg
+│   ├── without-agent-spec-guard-en.webp
+│   ├── with-agent-spec-guard-en.webp
+│   ├── without-agent-spec-guard-zh.webp
+│   └── with-agent-spec-guard-zh.webp
 ├── agents/
 │   └── openai.yaml
 ├── README.md
