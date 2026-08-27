@@ -1,0 +1,6 @@
+interface:
+  display_name: "AgentSpecGuard"
+  short_description: "Clarify intent. Lock scope. Prevent overengineering."
+  default_prompt: "Apply AgentSpecGuard before execution: clarify consequential ambiguity, lock scope, and make the minimum complete change."
+policy:
+  allow_implicit_invocation: true
