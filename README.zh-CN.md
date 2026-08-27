@@ -30,11 +30,11 @@
 
 ### 未使用 AgentSpecGuard
 
-![未使用 AgentSpecGuard](./assets/without-agent-spec-guard-zh.webp)
+![未使用 AgentSpecGuard](./assets/Without%20AgentSpecGuard_CN.png)
 
 ### 使用 AgentSpecGuard
 
-![使用 AgentSpecGuard](./assets/with-agent-spec-guard-zh.webp)
+![使用 AgentSpecGuard](./assets/With%20AgentSpecGuard_CN.png)
 
 如果你的需求本身已经足够明确，AgentSpecGuard 会 **一个问题都不问，直接执行**。
 
