@@ -1,32 +1,20 @@
 # AgentSpecGuard
 
-**阻止 AI Agent 猜需求、跑偏和过度工程化。**
+## AI Coding Agent 的执行前 Preflight
 
-一个轻量级 AI Agent Skill：执行前自动澄清真正会影响结果的需求，锁定任务范围，并抑制需求越界、顺手重构和不必要的过度工程化。
+**大多数 Coding Agent 的问题，不是不会写代码，而是太早开始写。AgentSpecGuard 会在执行前澄清真正重要的需求、锁定范围，并要求 AI 采用最小完整改动。**
+
+`Claude Code` · `OpenAI Codex` · `OpenCode` · `Agent Skills` · `零依赖`
+
+> **AI 不应该追问你 12 个问题，也不应该擅自替你猜 12 个答案。**
+
+AgentSpecGuard 是一个轻量级 **AI Agent Skill**，专门处理需求澄清、Scope Control 和过度工程化。它面向那些写代码很快，但容易自行补全需求、扩大任务范围、顺手重构、增加额外基础设施的 Coding Agent。
+
+**一个 `SKILL.md`。无服务器。无 API Key。无遥测。**
 
 [English README](./README.md)
 
-> 澄清真正重要的事，锁定范围，只做用户真正要求的事情。
-
-## 它解决什么问题？
-
-很多刚开始使用 AI 的用户会直接丢给 Agent 一句硬需求：
-
-```text
-给我的应用加一个登录功能。
-```
-
-然后 AI 会自行补全大量没有被说明的需求：JWT、Refresh Token、RBAC、Redis、数据库迁移、额外抽象层、大规模重构、整套测试……
-
-但用户真正想要的可能只是一个简单的本地密码登录页面。
-
-另一个极端也不好：如果只告诉 AI“有不清楚的地方就问我”，它很容易开始对无关痛痒的细节连续提问，把用户变成填 PRD 的人。
-
-**AgentSpecGuard 的目标就是卡在这两个极端之间。**
-
-它只追问会真正改变结果的歧义；一旦关键需求明确，就锁定范围，并要求 AI 采用满足当前需求的最小完整实现。
-
-## 使用前后
+## 先看使用前后
 
 ### 未使用 AgentSpecGuard
 
@@ -36,9 +24,37 @@
 
 ![使用 AgentSpecGuard](./assets/With%20AgentSpecGuard_CN.png)
 
-如果你的需求本身已经足够明确，AgentSpecGuard 会 **一个问题都不问，直接执行**。
+如果需求本身已经足够明确，AgentSpecGuard 会 **一个问题都不问，直接执行**。
 
-## 四个 Gate
+## 真正的问题是什么？
+
+用户只说：
+
+```text
+给我的应用加一个登录功能。
+```
+
+AI 已经有足够信息开始写代码，但还没有足够信息知道 **用户真正想要的是什么**。
+
+于是它会自己补全缺失需求：JWT、Refresh Token、RBAC、Redis、数据库迁移、额外抽象层、大规模重构、整套测试……
+
+但用户真正想要的，可能只是一个本地密码登录页面。
+
+另一个极端也同样糟糕：
+
+```text
+只要有任何不确定的地方都先问我。
+```
+
+这时 AI 又可能开始追问颜色、文件名、命名方式、无关默认值，把用户变成填写 PRD 的人。
+
+AgentSpecGuard 就卡在这两个极端之间。
+
+> **目标不是消灭所有不确定性，而是消灭会造成实际后果的歧义。**
+
+它只追问那些会真正改变最终结果、架构、范围、成本、风险或完成标准的问题；其余细节直接使用常规、低风险、可逆的默认值。
+
+## 一个 Skill，四道 Guardrail
 
 ### 1. 只澄清“有后果的歧义”
 
@@ -49,25 +65,20 @@
 - 项目范围和工作量；
 - 当前真正需要的兼容性；
 - 不可逆或破坏性操作；
-- 明显的成本、安全、隐私或运行风险；
+- 明显的安全、隐私、成本或运行风险；
 - 用户判断“完成”的关键标准。
 
-如果一个未说明的细节存在常规、低风险、可逆的默认值，就由 AI 自己选择，不要把问题甩回给用户。
+存在常规、低风险、可逆默认值的细节，由 AI 自己处理，不把问题甩回给用户。
 
-### 2. 每次只问一个问题
+### 2. 每次只问一个信息量最高的问题
 
-确实需要确认时：
+确实需要确认时，AI 只问当前**最影响最终结果的那个问题**，简短说明为什么要问，得到答案后再重新判断是否还需要继续确认。
 
-1. 只问一个；
-2. 优先问最影响最终结果的问题；
-3. 简短说明“为什么要问”；
-4. 得到答案后再判断是否还有必要继续问。
+不一次抛十几个问题，也不强行让用户填写 PRD。
 
-不会一次丢出十几个问题，也不会强行让用户填写 PRD。
+### 3. 执行前锁定 Scope
 
-### 3. 锁定 Scope
-
-执行前，AI 在内部把工作划分成：
+AI 在内部把任务分成：
 
 - **必须做**
 - **必要时允许做**
@@ -75,33 +86,43 @@
 
 看到旁边有一段代码很丑，不代表获得了顺手重构它的授权。
 
-### 4. 最小完整工程化
+### 4. 默认选择最小完整改动
 
-AgentSpecGuard 会压制 AI Agent 常见的过度工程化行为：
+AgentSpecGuard 会压制 Coding Agent 常见的过度工程化行为：
 
 - 静默吞错；
 - 没有依据的 fallback；
 - 为假想兼容性增加分支；
 - 为“以后可能用到”增加抽象层；
 - 顺手重构无关代码；
-- 与风险完全不匹配的验证强度；
-- 在没有需求时主动增加 hash、test ID、benchmark、A/B test 等额外验证机制。
+- 与实际风险完全不匹配的验证强度；
+- 在没有需求时主动增加 hash、test ID、benchmark、A/B test 等额外机制。
 
-但它不是“禁止工程化”。真实的外部输入和系统边界仍然应该验证；支付、迁移、安全、破坏性修改等高风险工作也应该使用更严格的验证。
+这不是“禁止防御性编程”。真实外部输入和系统边界仍然应该验证；支付、迁移、安全、破坏性修改等高风险工作也应该使用更严格的验证。
 
-## 安装
+## 为什么做这个 Skill？
 
-AgentSpecGuard 遵循开放的 [Agent Skills](https://agentskills.io) `SKILL.md` 格式，不需要运行时、不需要 API Key、没有额外依赖。
+“AI 把一个小任务越做越大”并不是一个假想问题。最近 Coding Agent 社区反复出现同一类反馈：小改动变成巨大 diff、无关重构、额外抽象，以及模型明明可以在之后把自己的实现简化，却一开始没有选择更简单的方案。
+
+- [Codex 用户：I am tired of Codex over engineering everything](https://www.reddit.com/r/codex/comments/1vk7p9q/i_am_tired_of_codex_over_engineering_everything/)
+- [Codex / Claude 用户：How do you stop ... overengineering small coding tasks?](https://www.reddit.com/r/codex/comments/1vf5elq/how_do_you_stop_codexclaude_from_overengineering/)
+- [Claude Code 用户：How to avoid overengineering?](https://www.reddit.com/r/ClaudeCode/comments/1uepqau/how_to_avoid_overengineering/)
+
+社区最常见的建议之一是：“把 Prompt 写得更具体。”
+
+AgentSpecGuard 想做的事情，是把这件事变成一个可重复使用的执行前流程，而不是要求每个新用户先学会 Prompt Engineering。
+
+## 快速安装
+
+AgentSpecGuard 遵循开放的 [Agent Skills](https://agentskills.io) `SKILL.md` 格式。
 
 ### Codex
-
-Codex 可以从 `~/.agents/skills` 发现用户级 Skill：
 
 ```bash
 git clone https://github.com/MoELuaNMaT/AgentSpecGuard.git ~/.agents/skills/agent-spec-guard
 ```
 
-也可以只给某个项目安装：
+项目级安装：
 
 ```text
 <项目目录>/.agents/skills/agent-spec-guard/
@@ -109,13 +130,11 @@ git clone https://github.com/MoELuaNMaT/AgentSpecGuard.git ~/.agents/skills/agen
 
 ### OpenCode
 
-OpenCode 同样支持 `.agents/skills`，所以可以直接使用同一套安装方式：
-
 ```bash
 git clone https://github.com/MoELuaNMaT/AgentSpecGuard.git ~/.agents/skills/agent-spec-guard
 ```
 
-同时也支持 `.opencode/skills/agent-spec-guard/` 和 `.claude/skills/agent-spec-guard/`。
+OpenCode 也可以使用 `.opencode/skills/agent-spec-guard/` 或 `.claude/skills/agent-spec-guard/`。
 
 ### Claude Code
 
@@ -129,41 +148,25 @@ git clone https://github.com/MoELuaNMaT/AgentSpecGuard.git ~/.claude/skills/agen
 
 ## 自动调用
 
-为了提高自动触发概率，`SKILL.md` 的 description 把 **build / create / modify / fix / design / plan / configure / implement / migrate / refactor** 等执行型关键词放在最前面。
+为了提高自动触发概率，Skill 的 description 中包含了 **build / create / modify / fix / design / plan / configure / implement / migrate / refactor** 等执行型关键词。
 
-因此在支持隐式 Skill Matching 的 Agent 中，只要用户提出“做一个东西 / 改一个东西 / 修一个东西”之类的请求，它就有机会自动加载。
+因此在支持隐式 Skill Matching 的 Agent 中，当用户提出“做一个东西 / 改一个东西 / 修一个东西”时，它有机会自动加载。
 
 普通事实问答不应该触发 AgentSpecGuard。
 
-需要说明的是：**Skill 的自动选择最终由宿主和模型决定。** 单纯一个 `SKILL.md` 无法百分之百保证拦截每一次输入。如果以后需要“每条用户输入后都强制拼接提示词”这种确定性行为，更正确的实现方式是给不同 Harness 做 Hook / Plugin / Extension 适配器，而不是假装 Skill 自身能保证这一点。
+需要说明的是：**Skill 的自动选择最终由宿主和模型决定。** 一个 `SKILL.md` 无法百分之百保证拦截每次输入。真正确定性的逐消息拦截，需要针对不同 Harness 实现 Hook / Plugin / Extension；这也是项目后续最自然的扩展方向。
 
 ## 为什么没有真的要求“达到 95% 自信”？
 
 LLM 并不存在可靠校准的“我现在有 95% 把握”数值。
 
-所以 AgentSpecGuard 保留这个目标，但把它改成可以观察的退出条件：
+所以 AgentSpecGuard 保留这个目标，但改成可观察的退出条件：
 
 - 最终目标已经明确；
 - 有办法判断任务是否完成；
 - 会改变技术路线或最终结果的歧义已经消除；
 - 无法安全自行决定的重要约束已经知道；
-- 剩余的不确定项都有低风险、可逆的常规默认值。
-
-目标不是消灭所有不确定性，而是消灭 **会造成实质后果的不确定性**。
-
-## 设计原则
-
-AgentSpecGuard 故意保持为 instruction-only Skill：
-
-- 无服务器
-- 无 API Key
-- 无遥测
-- 无包依赖
-- 不绑定模型
-
-它主要面向个人项目和小团队项目，重点解决“AI 为用户没有提出的需求主动建设一大堆基础设施”的问题。
-
-如果项目本身明确属于生产、高安全、监管或其他高风险环境，则项目里的真实约束优先于本 Skill 的轻量默认策略。
+- 剩余不确定项都有低风险、可逆的常规默认值。
 
 ## 兼容性
 
@@ -180,10 +183,10 @@ AgentSpecGuard 故意保持为 instruction-only Skill：
 AgentSpecGuard/
 ├── SKILL.md
 ├── assets/
-│   ├── without-agent-spec-guard-en.webp
-│   ├── with-agent-spec-guard-en.webp
-│   ├── without-agent-spec-guard-zh.webp
-│   └── with-agent-spec-guard-zh.webp
+│   ├── Without AgentSpecGuard_EN.png
+│   ├── With AgentSpecGuard_EN.png
+│   ├── Without AgentSpecGuard_CN.png
+│   └── With AgentSpecGuard_CN.png
 ├── agents/
 │   └── openai.yaml
 ├── README.md
@@ -195,7 +198,7 @@ AgentSpecGuard/
 
 ## 后续方向
 
-核心 Skill 应该继续保持小，而不是慢慢膨胀成一个新 Framework。
+核心 Skill 应该继续保持小，而不是慢慢膨胀成一个新的 Framework。
 
 真正值得增加的是薄适配层，让“自动拦截”从语义匹配升级成确定性行为：
 
