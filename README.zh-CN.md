@@ -28,42 +28,13 @@
 
 ## 使用前后
 
-没有 AgentSpecGuard：
+### 未使用 AgentSpecGuard
 
-```text
-你
-“加一个用户登录。”
+![未使用 AgentSpecGuard](./assets/without-agent-spec-guard-zh.svg)
 
-AI
-✓ 加入 JWT
-✓ 加入 Refresh Token Rotation
-✓ 加入 Redis Session
-✓ 加入 RBAC
-✓ 重构 Auth 模块
-✓ 新增 18 个测试
+### 使用 AgentSpecGuard
 
-你
-“……我只是想要一个本地密码页面。”
-```
-
-使用 AgentSpecGuard：
-
-```text
-你
-“加一个用户登录。”
-
-AI
-问题：你希望使用本地用户名/密码登录，还是 Google 等第三方登录？
-
-为什么要问：这个选择会直接改变认证架构和实现范围。
-
-你
-“本地用户名密码。”
-
-AI
-明白。我会实现最小完整的本地登录流程，不主动加入 OAuth、
-RBAC、Redis 或无关的认证基础设施。
-```
+![使用 AgentSpecGuard](./assets/with-agent-spec-guard-zh.svg)
 
 如果你的需求本身已经足够明确，AgentSpecGuard 会 **一个问题都不问，直接执行**。
 
@@ -208,6 +179,11 @@ AgentSpecGuard 故意保持为 instruction-only Skill：
 ```text
 AgentSpecGuard/
 ├── SKILL.md
+├── assets/
+│   ├── without-agent-spec-guard-en.svg
+│   ├── with-agent-spec-guard-en.svg
+│   ├── without-agent-spec-guard-zh.svg
+│   └── with-agent-spec-guard-zh.svg
 ├── agents/
 │   └── openai.yaml
 ├── README.md
