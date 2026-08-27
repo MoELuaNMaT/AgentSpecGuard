@@ -1,30 +1,20 @@
 # AgentSpecGuard
 
-**Stop AI agents from guessing, drifting, and overengineering.**
+## Preflight for AI coding agents.
 
-A lightweight AI Agent Skill that clarifies consequential requirements, locks task scope, and prevents unnecessary overengineering before execution.
+**Most coding agents start coding too early. AgentSpecGuard makes them clarify what matters, lock scope, and choose the minimum complete change before execution.**
+
+`Claude Code` · `OpenAI Codex` · `OpenCode` · `Agent Skills` · `Zero dependencies`
+
+> **AI should not ask 12 questions. It should not guess 12 answers either.**
+
+AgentSpecGuard is a lightweight **AI Agent Skill** for requirement clarification, scope control, and overengineering prevention. It is designed for coding agents that can write code fast but may guess missing requirements, expand the task, refactor unrelated code, or build infrastructure nobody asked for.
+
+**One `SKILL.md`. No server. No API key. No telemetry.**
 
 [中文 README](./README.zh-CN.md)
 
-> Clarify what matters. Lock the scope. Build only what was asked.
-
-## The problem
-
-New AI users often give agents a hard requirement in one sentence:
-
-```text
-Add authentication to my app.
-```
-
-The agent fills in the missing pieces by itself. That can turn into JWTs, refresh tokens, RBAC, Redis, migrations, extra abstractions, broad refactors, and a large test matrix — even when the user only wanted a simple password screen.
-
-The opposite failure mode is just as bad: telling the model to “ask questions first” can make it interrogate the user about every harmless detail.
-
-**AgentSpecGuard sits between those two extremes.**
-
-It asks only when the missing answer would materially change the result. Once the consequential ambiguity is gone, it locks scope and pushes the agent toward the minimum complete solution.
-
-## What it changes
+## See the difference
 
 ### Without AgentSpecGuard
 
@@ -36,23 +26,57 @@ It asks only when the missing answer would materially change the result. Once th
 
 If the request is already clear, AgentSpecGuard asks **zero questions** and proceeds directly.
 
-## Four gates, one small skill
+## The failure mode
 
-### 1. Consequential clarification
+A user asks:
 
-Ask only when different answers would materially change behavior, architecture, scope, cost, risk, or the user's definition of success.
+```text
+Add authentication to my app.
+```
+
+The agent has enough information to start coding, but not enough information to know **what the user actually means**. So it fills the gaps itself.
+
+That can become JWTs, refresh-token rotation, RBAC, Redis, migrations, abstractions, broad refactors, and a large test matrix — even when the user only wanted a local password screen.
+
+The opposite solution is not much better:
+
+```text
+Ask me about anything you are unsure about.
+```
+
+Now the agent can interrogate the user about colors, filenames, naming conventions, minor defaults, and other decisions that were never worth interrupting for.
+
+AgentSpecGuard sits between those two extremes.
+
+> **The goal is not zero uncertainty. The goal is zero consequential ambiguity.**
+
+It asks only when the missing answer would materially change the result, architecture, scope, cost, risk, or definition of success. Everything else gets a conventional, low-risk, reversible default.
+
+## One skill, four guardrails
+
+### 1. Clarify consequential ambiguity
+
+Ask only when different answers would materially change:
+
+- user-visible behavior or the final result;
+- architecture, data model, API, or implementation route;
+- project scope or workload;
+- compatibility that actually matters now;
+- irreversible or destructive operations;
+- meaningful security, privacy, cost, or operational risk;
+- the criteria the user will use to call the task complete.
 
 Safe, conventional, reversible defaults are inferred instead of pushed back to the user.
 
-### 2. One question at a time
+### 2. Ask one high-information question at a time
 
-When clarification is needed, the agent asks the highest-impact unresolved question and briefly explains why it matters.
+When clarification is necessary, the agent asks the **highest-impact unresolved question**, explains briefly why it matters, waits for the answer, and then reassesses.
 
-No giant questionnaire. No fake PRD ceremony.
+No questionnaire. No fake PRD ceremony.
 
-### 3. Scope boundary
+### 3. Lock the scope before execution
 
-Before execution, the agent internally separates:
+Before coding, the agent internally separates the task into:
 
 - **Required**
 - **Allowed if necessary**
@@ -60,7 +84,7 @@ Before execution, the agent internally separates:
 
 Finding nearby ugly code is not permission to refactor it.
 
-### 4. Minimum-complete engineering
+### 4. Prefer the minimum complete change
 
 AgentSpecGuard discourages common agentic overengineering patterns:
 
@@ -69,24 +93,32 @@ AgentSpecGuard discourages common agentic overengineering patterns:
 - speculative compatibility branches;
 - abstractions for hypothetical future needs;
 - unrelated refactors;
-- disproportionate validation;
+- verification effort disproportionate to actual risk;
 - hashes, synthetic IDs, benchmark harnesses, A/B tests, and similar machinery when the task does not require them.
 
-It still validates real external boundaries and uses stronger checks for genuinely high-risk work.
+This is **not** “never engineer defensively.” External inputs and real system boundaries should still be validated, and genuinely high-risk work should receive stronger verification.
 
-## Install
+## Why this exists
 
-AgentSpecGuard follows the open [Agent Skills](https://agentskills.io) `SKILL.md` format and has no runtime dependencies.
+Overengineering is a recurring complaint from coding-agent users. Recent discussions describe small tasks turning into large diffs, unrequested refactors, extra abstractions, and solutions that the same model can later simplify without losing functionality.
+
+- [Codex users: “I am tired of Codex over engineering everything”](https://www.reddit.com/r/codex/comments/1vk7p9q/i_am_tired_of_codex_over_engineering_everything/)
+- [Codex / Claude users: “How do you stop ... overengineering small coding tasks?”](https://www.reddit.com/r/codex/comments/1vf5elq/how_do_you_stop_codexclaude_from_overengineering/)
+- [Claude Code users: “How to avoid overengineering?”](https://www.reddit.com/r/ClaudeCode/comments/1uepqau/how_to_avoid_overengineering/)
+
+A common answer is “write a more specific prompt.” AgentSpecGuard turns that advice into a reusable pre-execution workflow instead of requiring every user to become a prompt engineer.
+
+## Quick install
+
+AgentSpecGuard follows the open [Agent Skills](https://agentskills.io) `SKILL.md` format.
 
 ### Codex
-
-Codex discovers user skills from `~/.agents/skills`:
 
 ```bash
 git clone https://github.com/MoELuaNMaT/AgentSpecGuard.git ~/.agents/skills/agent-spec-guard
 ```
 
-For a project-local install, clone or copy it into:
+Project-local:
 
 ```text
 <repo>/.agents/skills/agent-spec-guard/
@@ -94,17 +126,13 @@ For a project-local install, clone or copy it into:
 
 ### OpenCode
 
-OpenCode also discovers `.agents/skills`, so the same global installation works:
-
 ```bash
 git clone https://github.com/MoELuaNMaT/AgentSpecGuard.git ~/.agents/skills/agent-spec-guard
 ```
 
-You can also use `.opencode/skills/agent-spec-guard/` or `.claude/skills/agent-spec-guard/`.
+OpenCode can also use `.opencode/skills/agent-spec-guard/` or `.claude/skills/agent-spec-guard/`.
 
 ### Claude Code
-
-Clone it into Claude Code's skills directory:
 
 ```bash
 git clone https://github.com/MoELuaNMaT/AgentSpecGuard.git ~/.claude/skills/agent-spec-guard
@@ -112,37 +140,27 @@ git clone https://github.com/MoELuaNMaT/AgentSpecGuard.git ~/.claude/skills/agen
 
 ### Other Agent Skills-compatible hosts
 
-Place this repository wherever your host discovers a skill directory containing `SKILL.md`.
+Place the repository wherever your host discovers a skill directory containing `SKILL.md`.
 
 ## Automatic activation
 
-The skill description is intentionally front-loaded with common execution verbs such as **build, create, modify, fix, design, plan, configure, implement, migrate, and refactor** so compatible hosts can select it implicitly.
+The skill description intentionally includes common execution verbs such as **build, create, modify, fix, design, plan, configure, implement, migrate, and refactor** so compatible hosts can select it implicitly when a user asks an agent to make something.
 
-AgentSpecGuard should **not** activate for ordinary factual questions that can simply be answered.
+Ordinary factual questions should not activate AgentSpecGuard.
 
-Implicit skill selection is ultimately controlled by the host/model. A `SKILL.md` skill cannot cryptographically guarantee interception of every single prompt. If you need deterministic prompt injection on every request, a host-specific hook/plugin is the right enforcement layer; that is a natural future adapter for this project.
+Implicit skill selection is ultimately controlled by the host and model. A `SKILL.md` skill cannot guarantee interception of every prompt. Deterministic per-message interception requires a host-specific Hook / Plugin / Extension adapter; those adapters are the natural next step for this project.
 
 ## Why not literally require “95% confidence”?
 
-LLMs do not have a reliable calibrated internal probability that makes “I am 95% confident” meaningful.
+LLMs do not expose a reliably calibrated internal probability where “I am 95% confident” means what it sounds like.
 
-AgentSpecGuard keeps the intent but replaces the number with observable exit criteria. The agent can start when:
+AgentSpecGuard keeps the intent and replaces the fake precision with observable exit criteria. Execution can begin when:
 
 - the desired outcome is clear;
 - success can be judged;
 - route-changing ambiguities are resolved;
 - important non-defaultable constraints are known;
 - remaining uncertainty can be handled with low-risk, reversible defaults.
-
-The goal is not zero uncertainty. The goal is **zero consequential ambiguity**.
-
-## Design philosophy
-
-AgentSpecGuard is deliberately instruction-only.
-
-No server. No API key. No telemetry. No package install. No model dependency.
-
-The project is optimized for personal and small-team work, where agents frequently waste time by building infrastructure the user never asked for. If the repository clearly has stronger production, regulatory, safety, or security requirements, those concrete requirements take priority over the skill's lightweight defaults.
 
 ## Compatibility
 
@@ -159,10 +177,10 @@ The project is optimized for personal and small-team work, where agents frequent
 AgentSpecGuard/
 ├── SKILL.md
 ├── assets/
-│   ├── without-agent-spec-guard-en.webp
-│   ├── with-agent-spec-guard-en.webp
-│   ├── without-agent-spec-guard-zh.webp
-│   └── with-agent-spec-guard-zh.webp
+│   ├── Without AgentSpecGuard_EN.png
+│   ├── With AgentSpecGuard_EN.png
+│   ├── Without AgentSpecGuard_CN.png
+│   └── With AgentSpecGuard_CN.png
 ├── agents/
 │   └── openai.yaml
 ├── README.md
@@ -174,11 +192,11 @@ AgentSpecGuard/
 
 ## Roadmap
 
-Keep the core small. The useful next step is not to turn this into a framework; it is to add thin host-specific adapters where deterministic interception is valuable.
+Keep the core small. The useful next step is not to turn this into another framework; it is to add thin host-specific adapters where deterministic interception is valuable.
 
-- [ ] Claude Code hook/plugin adapter
-- [ ] OpenCode plugin adapter
-- [ ] OMP extension adapter
+- [ ] Claude Code Hook / Plugin adapter
+- [ ] OpenCode Plugin adapter
+- [ ] OMP Extension adapter
 - [ ] Small behavior eval set for ambiguous vs. non-ambiguous prompts
 
 ## License
