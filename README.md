@@ -28,11 +28,11 @@ It asks only when the missing answer would materially change the result. Once th
 
 ### Without AgentSpecGuard
 
-![Without AgentSpecGuard](./assets/without-agent-spec-guard-en.webp)
+![Without AgentSpecGuard](./assets/Without%20AgentSpecGuard_EN.png)
 
 ### With AgentSpecGuard
 
-![With AgentSpecGuard](./assets/with-agent-spec-guard-en.webp)
+![With AgentSpecGuard](./assets/With%20AgentSpecGuard_EN.png)
 
 If the request is already clear, AgentSpecGuard asks **zero questions** and proceeds directly.
 
