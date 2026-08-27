@@ -26,44 +26,13 @@ It asks only when the missing answer would materially change the result. Once th
 
 ## What it changes
 
-Without AgentSpecGuard:
+### Without AgentSpecGuard
 
-```text
-YOU
-"Add user authentication."
+![Without AgentSpecGuard](./assets/without-agent-spec-guard-en.svg)
 
-AI
-✓ Added JWT access tokens
-✓ Added refresh-token rotation
-✓ Added Redis sessions
-✓ Added RBAC
-✓ Refactored the auth module
-✓ Added 18 tests
+### With AgentSpecGuard
 
-YOU
-"...I just wanted a local password screen."
-```
-
-With AgentSpecGuard:
-
-```text
-YOU
-"Add user authentication."
-
-AI
-Question: Should this be local username/password authentication,
-or an external provider such as Google?
-
-Why I'm asking: This changes the authentication architecture and
-would materially change what I build.
-
-YOU
-"Local username/password."
-
-AI
-Got it. I'll implement the minimum local login flow without adding
-OAuth, RBAC, Redis, or unrelated authentication infrastructure.
-```
+![With AgentSpecGuard](./assets/with-agent-spec-guard-en.svg)
 
 If the request is already clear, AgentSpecGuard asks **zero questions** and proceeds directly.
 
@@ -189,6 +158,11 @@ The project is optimized for personal and small-team work, where agents frequent
 ```text
 AgentSpecGuard/
 ├── SKILL.md
+├── assets/
+│   ├── without-agent-spec-guard-en.svg
+│   ├── with-agent-spec-guard-en.svg
+│   ├── without-agent-spec-guard-zh.svg
+│   └── with-agent-spec-guard-zh.svg
 ├── agents/
 │   └── openai.yaml
 ├── README.md
