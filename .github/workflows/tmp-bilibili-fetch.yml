@@ -1,0 +1,145 @@
+name: Temporary Bilibili Fetch
+
+on:
+  push:
+    branches:
+      - tmp-bilibili-BV1Tit86MECG
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -U "yt-dlp[default,curl-cffi]"
+
+      - name: Fetch metadata and subtitles
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p out
+          URL='https://www.bilibili.com/video/BV1Tit86MECG/'
+          COMMON=(--impersonate chrome --add-header 'Referer:https://www.bilibili.com/' --add-header 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36')
+          yt-dlp "${COMMON[@]}" --dump-single-json "$URL" > out/meta.json 2>out/meta.err || true
+          yt-dlp "${COMMON[@]}" --skip-download --write-subs --write-auto-subs --sub-langs 'zh.*,ai-zh,zh-CN,zh-Hans,zh-Hant' --sub-format 'vtt/best' -o 'out/video.%(ext)s' "$URL" >out/subs.log 2>&1 || true
+          ls -lah out
+
+      - name: Build transcript from subtitles
+        id: subtitle
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          out = Path('out')
+          vtts = list(out.glob('*.vtt'))
+          if not vtts:
+              print('No VTT subtitle found')
+              raise SystemExit(0)
+          src = max(vtts, key=lambda p: p.stat().st_size)
+          lines=[]
+          prev=None
+          for raw in src.read_text(encoding='utf-8', errors='ignore').splitlines():
+              s=raw.strip()
+              if not s or s=='WEBVTT' or '-->' in s or s.isdigit() or s.startswith('NOTE'):
+                  continue
+              s=re.sub(r'<[^>]+>', '', s)
+              s=re.sub(r'&nbsp;', ' ', s)
+              if s and s != prev:
+                  lines.append(s)
+                  prev=s
+          Path('out/transcript.txt').write_text('\n'.join(lines), encoding='utf-8')
+          print(f'Using subtitle: {src}, lines={len(lines)}')
+          PY
+
+      - name: ASR fallback when subtitles are unavailable
+        shell: bash
+        run: |
+          set -uo pipefail
+          if [ -s out/transcript.txt ]; then
+            echo 'Transcript already available from subtitles.'
+            exit 0
+          fi
+          URL='https://www.bilibili.com/video/BV1Tit86MECG/'
+          COMMON=(--impersonate chrome --add-header 'Referer:https://www.bilibili.com/' --add-header 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36')
+          yt-dlp "${COMMON[@]}" -f 'bestaudio/best' -x --audio-format mp3 -o 'out/audio.%(ext)s' "$URL" >out/audio.log 2>&1 || true
+          AUDIO=$(find out -maxdepth 1 -type f \( -name 'audio.mp3' -o -name 'audio.m4a' -o -name 'audio.webm' -o -name 'audio.opus' \) | head -n1)
+          if [ -z "${AUDIO:-}" ]; then
+            echo 'Audio download failed; dumping logs.'
+            cat out/meta.err || true
+            cat out/subs.log || true
+            cat out/audio.log || true
+            exit 1
+          fi
+          python -m pip install -U faster-whisper
+          python - "$AUDIO" <<'PY'
+          import sys
+          from pathlib import Path
+          from faster_whisper import WhisperModel
+          audio=sys.argv[1]
+          model=WhisperModel('small', device='cpu', compute_type='int8')
+          segments, info=model.transcribe(audio, language='zh', vad_filter=True, beam_size=5)
+          lines=[]
+          stamped=[]
+          for seg in segments:
+              text=seg.text.strip()
+              if not text:
+                  continue
+              lines.append(text)
+              stamped.append(f'[{seg.start:8.2f}-{seg.end:8.2f}] {text}')
+          Path('out/transcript.txt').write_text('\n'.join(lines), encoding='utf-8')
+          Path('out/transcript_timed.txt').write_text('\n'.join(stamped), encoding='utf-8')
+          print(f'ASR language={info.language}, probability={info.language_probability:.3f}, segments={len(lines)}')
+          PY
+
+      - name: Print metadata and transcript
+        if: always()
+        shell: bash
+        run: |
+          echo '===== META ====='
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/meta.json')
+          if p.exists() and p.stat().st_size:
+              try:
+                  d=json.loads(p.read_text(encoding='utf-8'))
+                  keys=['id','title','description','uploader','uploader_id','duration','timestamp','view_count','like_count','comment_count','webpage_url']
+                  print(json.dumps({k:d.get(k) for k in keys}, ensure_ascii=False, indent=2))
+              except Exception as e:
+                  print('meta parse error:',e)
+          else:
+              print('No metadata')
+          PY
+          echo '===== TRANSCRIPT ====='
+          if [ -s out/transcript.txt ]; then
+            cat out/transcript.txt
+          else
+            echo 'No transcript generated.'
+          fi
+          echo '===== DEBUG ====='
+          cat out/meta.err 2>/dev/null || true
+          cat out/subs.log 2>/dev/null || true
+          cat out/audio.log 2>/dev/null || true
+
+      - name: Upload text artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilibili-BV1Tit86MECG
+          path: |
+            out/meta.json
+            out/transcript.txt
+            out/transcript_timed.txt
+            out/*.log
+            out/*.err
+          if-no-files-found: warn
+          retention-days: 1
