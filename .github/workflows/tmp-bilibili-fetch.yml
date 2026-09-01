@@ -15,103 +15,50 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Query public parse relays
+      - name: Install media tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg
+          python -m pip install -U requests faster-whisper
+
+      - name: Resolve and download video through relay
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p out
-          python -m pip install -U requests
           python - <<'PY'
-          import json, pathlib, requests, urllib.parse, re
+          import json, pathlib, requests, urllib.parse
           BV='BV1Tit86MECG'
           PAGE=f'https://www.bilibili.com/video/{BV}/'
-          ua='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36'
-          sess=requests.Session(); sess.headers.update({'User-Agent':ua,'Referer':'https://www.bilibili.com/'})
-          endpoints=[
-            ('injahow', f'https://api.injahow.cn/bparse/?bv={BV}&p=1&q=64&format=mp4&otype=json'),
-            ('mir6', 'https://api.mir6.com/api/bzjiexi?'+urllib.parse.urlencode({'url':PAGE,'type':'json'})),
-            ('mxin', 'https://api.mxin.moe/api/v1/bilibili?'+urllib.parse.urlencode({'url':PAGE,'quality':'64'})),
-            ('mymzf', f'https://api.mymzf.com/api/bilibili?bv={BV}'),
-          ]
-          results={}
-          for name,url in endpoints:
-            try:
-              r=sess.get(url,timeout=30,allow_redirects=True)
-              text=r.text
-              pathlib.Path(f'out/{name}.txt').write_text(text,encoding='utf-8',errors='ignore')
-              results[name]={'status':r.status_code,'url':str(r.url),'head':text[:1000]}
-              print('\n===== RELAY',name,r.status_code,'=====')
-              print(text[:3000])
-            except Exception as e:
-              results[name]={'error':repr(e)}
-              print('\n===== RELAY',name,'ERROR =====',repr(e))
-          pathlib.Path('out/relay_status.json').write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf-8')
-
-          # Find media-looking URLs recursively / textually.
-          candidates=[]
-          def walk(x, path=''):
-            if isinstance(x,dict):
-              for k,v in x.items(): walk(v, path+'.'+str(k))
-            elif isinstance(x,list):
-              for i,v in enumerate(x): walk(v,path+f'[{i}]')
-            elif isinstance(x,str) and x.startswith('http'):
-              score=0
-              low=x.lower()
-              if any(z in low for z in ['bilivideo','m4s','.mp4','.flv','video','audio']): score+=10
-              if any(z in path.lower() for z in ['url','video','audio','play']): score+=5
-              candidates.append((score,path,x))
-          for name,_ in endpoints:
-            p=pathlib.Path(f'out/{name}.txt')
-            if not p.exists(): continue
-            text=p.read_text(encoding='utf-8',errors='ignore')
-            try: walk(json.loads(text),name)
-            except Exception: pass
-            for m in re.findall(r'https?://[^"\'<>\\ ]+',text):
-              low=m.lower(); score=0
-              if any(z in low for z in ['bilivideo','m4s','.mp4','.flv']): score+=10
-              candidates.append((score,name+'.regex',m.replace('\\/','/')))
-          candidates=sorted(set(candidates),reverse=True)
-          pathlib.Path('out/candidates.json').write_text(json.dumps(candidates[:100],ensure_ascii=False,indent=2),encoding='utf-8')
-          print('\n===== CANDIDATES =====')
-          for c in candidates[:30]: print(c)
-          if not candidates:
-            raise SystemExit('No candidate media URL from relays')
-          # Try candidates until one yields a sizable media file.
-          for score,path,url in candidates:
-            if score < 5: continue
-            try:
-              print('TRY MEDIA',path,url[:250])
-              with sess.get(url,stream=True,timeout=60,allow_redirects=True) as r:
-                print('HTTP',r.status_code,r.headers.get('content-type'),r.headers.get('content-length'))
-                if r.status_code >= 400: continue
-                f=open('out/media.bin','wb'); total=0
-                for chunk in r.iter_content(1024*1024):
-                  if chunk:
-                    f.write(chunk); total+=len(chunk)
-                    if total > 500*1024*1024: break
-                f.close()
-              if total > 100000:
-                pathlib.Path('out/media_source.txt').write_text(url,encoding='utf-8')
-                print('MEDIA DOWNLOADED',total)
-                break
-            except Exception as e:
-              print('MEDIA ERROR',repr(e))
-          if not pathlib.Path('out/media.bin').exists() or pathlib.Path('out/media.bin').stat().st_size < 100000:
-            raise SystemExit('Could not download media from relay candidates')
+          api='https://api.mir6.com/api/bzjiexi?'+urllib.parse.urlencode({'url':PAGE,'type':'json'})
+          s=requests.Session(); s.headers.update({'User-Agent':'Mozilla/5.0','Referer':'https://www.bilibili.com/'})
+          r=s.get(api,timeout=30); r.raise_for_status(); d=r.json()
+          pathlib.Path('out/meta.json').write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')
+          print('TITLE:',d.get('title'))
+          print('DESC:',d.get('desc'))
+          items=d.get('data') or []
+          if not items: raise SystemExit('Relay returned no video items')
+          url=items[0].get('video_url') or items[0].get('url')
+          if not url: raise SystemExit('Relay returned no media URL')
+          pathlib.Path('out/media_source.txt').write_text(url,encoding='utf-8')
+          with s.get(url,stream=True,timeout=60) as rr:
+              rr.raise_for_status()
+              with open('out/video.mp4','wb') as f:
+                  for chunk in rr.iter_content(1024*1024):
+                      if chunk: f.write(chunk)
+          print('VIDEO_BYTES:',pathlib.Path('out/video.mp4').stat().st_size)
           PY
 
-      - name: Extract audio
-        shell: bash
+      - name: Extract audio and keyframes
         run: |
-          set -euo pipefail
-          ffprobe -hide_banner out/media.bin || true
-          ffmpeg -hide_banner -loglevel warning -y -i out/media.bin -vn -ac 1 -ar 16000 out/audio.wav
+          ffmpeg -hide_banner -loglevel warning -y -i out/video.mp4 -vn -ac 1 -ar 16000 out/audio.wav
+          mkdir -p out/frames
+          ffmpeg -hide_banner -loglevel warning -y -i out/video.mp4 -vf "fps=1/120,scale=640:-2" -q:v 3 out/frames/frame_%02d.jpg
 
-      - name: Whisper ASR
+      - name: Transcribe with Whisper
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install -U faster-whisper
           python - <<'PY'
           from pathlib import Path
           from faster_whisper import WhisperModel
@@ -121,34 +68,25 @@ jobs:
           for s in segments:
               t=s.text.strip()
               if not t: continue
-              lines.append(t); timed.append(f'[{s.start:8.2f}-{s.end:8.2f}] {t}')
+              lines.append(t)
+              timed.append(f'[{s.start:8.2f}-{s.end:8.2f}] {t}')
           Path('out/transcript.txt').write_text('\n'.join(lines),encoding='utf-8')
           Path('out/transcript_timed.txt').write_text('\n'.join(timed),encoding='utf-8')
-          print('ASR',info.language,info.language_probability,'segments',len(lines))
+          print('ASR_LANGUAGE:',info.language,'PROB:',info.language_probability,'SEGMENTS:',len(lines))
+          print('===== TRANSCRIPT =====')
+          print('\n'.join(lines))
           PY
-
-      - name: Print result
-        if: always()
-        shell: bash
-        run: |
-          echo '===== RELAYS ====='
-          cat out/relay_status.json 2>/dev/null || true
-          echo '===== SOURCE ====='
-          cat out/media_source.txt 2>/dev/null || true
-          echo '===== TRANSCRIPT ====='
-          cat out/transcript.txt 2>/dev/null || true
 
       - name: Upload result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bilibili-BV1Tit86MECG-relay
+          name: bilibili-BV1Tit86MECG-final
           path: |
-            out/relay_status.json
-            out/candidates.json
+            out/meta.json
             out/media_source.txt
             out/transcript.txt
             out/transcript_timed.txt
-            out/*.txt
+            out/frames/*.jpg
           if-no-files-found: warn
           retention-days: 1
