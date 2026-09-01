@@ -1,0 +1,135 @@
+name: Temporary XHS Fetch
+
+on:
+  push:
+    branches:
+      - tmp-xhs-6a96833f000000000b00c51a
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install requests
+        run: python -m pip install -U requests
+
+      - name: Parse note and download images
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/images
+          python - <<'PY'
+          import json, pathlib, re, requests, urllib.parse
+
+          SHARE='https://www.xiaohongshu.com/discovery/item/6a96833f000000000b00c51a?source=webshare&xhsshare=pc_web&xsec_token=ABQfzyM3U-rBDtZjjNFUwbjLW9cui1ZsjUzoWUVr0uTXw=&xsec_source=pc_share'
+          sess=requests.Session()
+          sess.headers.update({
+              'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36',
+              'Referer':'https://www.xiaohongshu.com/'
+          })
+
+          endpoints=[
+              ('mujie','https://api.mu-jie.cc/xhs?'+urllib.parse.urlencode({'url':SHARE})),
+              ('bugpk','https://api.bugpk.com/api/xhs?'+urllib.parse.urlencode({'url':SHARE})),
+              ('bugpkjx','https://api.bugpk.com/api/xhsjx?'+urllib.parse.urlencode({'url':SHARE})),
+              ('cxzja','https://api.cxzja.cn/api/xhs?'+urllib.parse.urlencode({'url':SHARE})),
+              ('lalkk','https://api.lalkk.com/xhs?'+urllib.parse.urlencode({'url':SHARE})),
+          ]
+
+          all_results={}
+          parsed=[]
+          for name,url in endpoints:
+              try:
+                  r=sess.get(url,timeout=40,allow_redirects=True)
+                  text=r.text
+                  pathlib.Path(f'out/{name}.txt').write_text(text,encoding='utf-8',errors='ignore')
+                  info={'status':r.status_code,'final_url':str(r.url),'head':text[:2000]}
+                  try:
+                      data=r.json(); info['json']=data; parsed.append((name,data))
+                      pathlib.Path(f'out/{name}.json').write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
+                  except Exception as e:
+                      info['json_error']=repr(e)
+                  all_results[name]=info
+                  print('\n====',name,r.status_code,'====')
+                  print(text[:5000])
+              except Exception as e:
+                  all_results[name]={'error':repr(e)}
+                  print('\n====',name,'ERROR ====')
+                  print(repr(e))
+
+          pathlib.Path('out/status.json').write_text(json.dumps(all_results,ensure_ascii=False,indent=2),encoding='utf-8')
+
+          # Recursively collect likely image URLs and useful text fields.
+          image_urls=[]
+          text_values=[]
+          def walk(x,path=''):
+              if isinstance(x,dict):
+                  for k,v in x.items(): walk(v,path+'.'+str(k))
+              elif isinstance(x,list):
+                  for i,v in enumerate(x): walk(v,path+f'[{i}]')
+              elif isinstance(x,str):
+                  low=x.lower()
+                  if len(x)>3 and any(k in path.lower() for k in ['title','desc','content','文案','标题','作品标题','作品文案']):
+                      text_values.append((path,x))
+                  if x.startswith('http') and (
+                      'xhscdn.com' in low or 'xiaohongshu.com' in low or
+                      any(k in path.lower() for k in ['image','images','img','cover','图片','原图','壁纸'])
+                  ):
+                      image_urls.append((path,x.replace('\\/','/')))
+
+          for name,data in parsed: walk(data,name)
+          # Stable dedupe preserving first occurrence.
+          dedup=[]; seen=set()
+          for path,url in image_urls:
+              if url in seen: continue
+              seen.add(url); dedup.append((path,url))
+          pathlib.Path('out/text_fields.json').write_text(json.dumps(text_values,ensure_ascii=False,indent=2),encoding='utf-8')
+          pathlib.Path('out/image_urls.json').write_text(json.dumps(dedup,ensure_ascii=False,indent=2),encoding='utf-8')
+          print('\n==== TEXT FIELDS ====')
+          for x in text_values[:50]: print(x)
+          print('\n==== IMAGE URLS ====')
+          for x in dedup[:50]: print(x)
+
+          # Skip obvious avatars; try all other image candidates until downloaded.
+          n=0
+          for path,url in dedup:
+              lp=path.lower()
+              if 'avatar' in lp or '头像' in path or '/avatar/' in url: continue
+              try:
+                  rr=sess.get(url,timeout=45,stream=True,headers={**sess.headers,'Referer':'https://www.xiaohongshu.com/'})
+                  ctype=rr.headers.get('content-type','')
+                  if rr.status_code>=400: continue
+                  b=rr.content
+                  if len(b)<5000: continue
+                  ext='.jpg'
+                  if 'png' in ctype: ext='.png'
+                  elif 'webp' in ctype: ext='.webp'
+                  p=pathlib.Path(f'out/images/{n:02d}{ext}')
+                  p.write_bytes(b)
+                  pathlib.Path(f'out/images/{n:02d}.source.txt').write_text(f'{path}\n{url}\n{ctype}\n{len(b)}',encoding='utf-8')
+                  print('DOWNLOADED',n,path,ctype,len(b))
+                  n+=1
+                  if n>=30: break
+              except Exception as e:
+                  print('IMG ERR',path,repr(e))
+          print('IMAGE_COUNT',n)
+          if n==0:
+              raise SystemExit('No note images downloaded')
+          PY
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xhs-6a96833f000000000b00c51a
+          path: |
+            out/*.json
+            out/*.txt
+            out/images/*
+          if-no-files-found: warn
+          retention-days: 1
