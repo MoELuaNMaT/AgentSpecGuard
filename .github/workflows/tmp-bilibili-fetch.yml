@@ -15,111 +15,102 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Fetch via Bilibili public APIs
+      - name: Query public parse relays
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p out
-          BVID='BV1Tit86MECG'
-          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36'
-          HDR=(-H "User-Agent: $UA" -H 'Referer: https://www.bilibili.com/')
-
-          curl -fL --retry 3 "${HDR[@]}" "https://api.bilibili.com/x/web-interface/view?bvid=$BVID" -o out/view.json
-
-          CID=$(python - <<'PY'
-          import json
-          d=json.load(open('out/view.json',encoding='utf-8'))
-          print(d['data']['pages'][0]['cid'])
-          PY
-          )
-          echo "CID=$CID"
-
-          curl -fL --retry 3 "${HDR[@]}" "https://api.bilibili.com/x/player/v2?bvid=$BVID&cid=$CID" -o out/player.json || true
-          curl -fL --retry 3 "${HDR[@]}" "https://api.bilibili.com/x/player/playurl?bvid=$BVID&cid=$CID&qn=64&fnval=16&fnver=0&fourk=1" -o out/playurl.json
-
+          python -m pip install -U requests
           python - <<'PY'
-          import json
-          v=json.load(open('out/view.json',encoding='utf-8'))['data']
-          out={
-              'bvid':v.get('bvid'),'aid':v.get('aid'),'title':v.get('title'),'desc':v.get('desc'),
-              'duration':v.get('duration'),'pubdate':v.get('pubdate'),'owner':v.get('owner'),'stat':v.get('stat'),
-              'pages':v.get('pages')
-          }
-          open('out/meta.json','w',encoding='utf-8').write(json.dumps(out,ensure_ascii=False,indent=2))
-          print(json.dumps(out,ensure_ascii=False,indent=2))
+          import json, pathlib, requests, urllib.parse, re
+          BV='BV1Tit86MECG'
+          PAGE=f'https://www.bilibili.com/video/{BV}/'
+          ua='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36'
+          sess=requests.Session(); sess.headers.update({'User-Agent':ua,'Referer':'https://www.bilibili.com/'})
+          endpoints=[
+            ('injahow', f'https://api.injahow.cn/bparse/?bv={BV}&p=1&q=64&format=mp4&otype=json'),
+            ('mir6', 'https://api.mir6.com/api/bzjiexi?'+urllib.parse.urlencode({'url':PAGE,'type':'json'})),
+            ('mxin', 'https://api.mxin.moe/api/v1/bilibili?'+urllib.parse.urlencode({'url':PAGE,'quality':'64'})),
+            ('mymzf', f'https://api.mymzf.com/api/bilibili?bv={BV}'),
+          ]
+          results={}
+          for name,url in endpoints:
+            try:
+              r=sess.get(url,timeout=30,allow_redirects=True)
+              text=r.text
+              pathlib.Path(f'out/{name}.txt').write_text(text,encoding='utf-8',errors='ignore')
+              results[name]={'status':r.status_code,'url':str(r.url),'head':text[:1000]}
+              print('\n===== RELAY',name,r.status_code,'=====')
+              print(text[:3000])
+            except Exception as e:
+              results[name]={'error':repr(e)}
+              print('\n===== RELAY',name,'ERROR =====',repr(e))
+          pathlib.Path('out/relay_status.json').write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf-8')
+
+          # Find media-looking URLs recursively / textually.
+          candidates=[]
+          def walk(x, path=''):
+            if isinstance(x,dict):
+              for k,v in x.items(): walk(v, path+'.'+str(k))
+            elif isinstance(x,list):
+              for i,v in enumerate(x): walk(v,path+f'[{i}]')
+            elif isinstance(x,str) and x.startswith('http'):
+              score=0
+              low=x.lower()
+              if any(z in low for z in ['bilivideo','m4s','.mp4','.flv','video','audio']): score+=10
+              if any(z in path.lower() for z in ['url','video','audio','play']): score+=5
+              candidates.append((score,path,x))
+          for name,_ in endpoints:
+            p=pathlib.Path(f'out/{name}.txt')
+            if not p.exists(): continue
+            text=p.read_text(encoding='utf-8',errors='ignore')
+            try: walk(json.loads(text),name)
+            except Exception: pass
+            for m in re.findall(r'https?://[^"\'<>\\ ]+',text):
+              low=m.lower(); score=0
+              if any(z in low for z in ['bilivideo','m4s','.mp4','.flv']): score+=10
+              candidates.append((score,name+'.regex',m.replace('\\/','/')))
+          candidates=sorted(set(candidates),reverse=True)
+          pathlib.Path('out/candidates.json').write_text(json.dumps(candidates[:100],ensure_ascii=False,indent=2),encoding='utf-8')
+          print('\n===== CANDIDATES =====')
+          for c in candidates[:30]: print(c)
+          if not candidates:
+            raise SystemExit('No candidate media URL from relays')
+          # Try candidates until one yields a sizable media file.
+          for score,path,url in candidates:
+            if score < 5: continue
+            try:
+              print('TRY MEDIA',path,url[:250])
+              with sess.get(url,stream=True,timeout=60,allow_redirects=True) as r:
+                print('HTTP',r.status_code,r.headers.get('content-type'),r.headers.get('content-length'))
+                if r.status_code >= 400: continue
+                f=open('out/media.bin','wb'); total=0
+                for chunk in r.iter_content(1024*1024):
+                  if chunk:
+                    f.write(chunk); total+=len(chunk)
+                    if total > 500*1024*1024: break
+                f.close()
+              if total > 100000:
+                pathlib.Path('out/media_source.txt').write_text(url,encoding='utf-8')
+                print('MEDIA DOWNLOADED',total)
+                break
+            except Exception as e:
+              print('MEDIA ERROR',repr(e))
+          if not pathlib.Path('out/media.bin').exists() or pathlib.Path('out/media.bin').stat().st_size < 100000:
+            raise SystemExit('Could not download media from relay candidates')
           PY
 
-      - name: Try native subtitle
+      - name: Extract audio
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json, pathlib, urllib.request
-          p=pathlib.Path('out/player.json')
-          if not p.exists() or not p.stat().st_size:
-              raise SystemExit(0)
-          d=json.load(open(p,encoding='utf-8'))
-          subs=((d.get('data') or {}).get('subtitle') or {}).get('subtitles') or []
-          if not subs:
-              print('No native subtitle listed')
-              raise SystemExit(0)
-          s=subs[0]
-          u=s.get('subtitle_url') or ''
-          if u.startswith('//'): u='https:'+u
-          req=urllib.request.Request(u, headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.bilibili.com/'})
-          body=json.loads(urllib.request.urlopen(req,timeout=30).read().decode('utf-8'))
-          lines=[]; timed=[]
-          for x in body.get('body',[]):
-              t=(x.get('content') or '').strip()
-              if t:
-                  lines.append(t)
-                  timed.append(f"[{x.get('from',0):8.2f}-{x.get('to',0):8.2f}] {t}")
-          pathlib.Path('out/transcript.txt').write_text('\n'.join(lines),encoding='utf-8')
-          pathlib.Path('out/transcript_timed.txt').write_text('\n'.join(timed),encoding='utf-8')
-          print('Native subtitle lines:',len(lines),'lang:',s.get('lan_doc') or s.get('lan'))
-          PY
+          ffprobe -hide_banner out/media.bin || true
+          ffmpeg -hide_banner -loglevel warning -y -i out/media.bin -vn -ac 1 -ar 16000 out/audio.wav
 
-      - name: Download audio from playurl when subtitle missing
+      - name: Whisper ASR
         shell: bash
         run: |
           set -euo pipefail
-          if [ -s out/transcript.txt ]; then
-            echo 'Native subtitle found; audio download not needed.'
-            exit 0
-          fi
-          python - <<'PY'
-          import json, pathlib, urllib.request
-          d=json.load(open('out/playurl.json',encoding='utf-8'))
-          data=d.get('data') or {}
-          url=None
-          dash=data.get('dash') or {}
-          audios=dash.get('audio') or []
-          if audios:
-              a=max(audios,key=lambda x:x.get('bandwidth',0))
-              url=a.get('baseUrl') or a.get('base_url')
-          if not url:
-              durl=data.get('durl') or []
-              if durl: url=durl[0].get('url')
-          if not url:
-              raise SystemExit('No downloadable media URL in playurl response')
-          req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.bilibili.com/'})
-          with urllib.request.urlopen(req,timeout=60) as r, open('out/audio.bin','wb') as f:
-              while True:
-                  b=r.read(1024*1024)
-                  if not b: break
-                  f.write(b)
-          print('Downloaded bytes:',pathlib.Path('out/audio.bin').stat().st_size)
-          PY
-          ffmpeg -hide_banner -loglevel error -y -i out/audio.bin -vn -ac 1 -ar 16000 out/audio.wav
-
-      - name: Whisper ASR fallback
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -s out/transcript.txt ]; then
-            echo 'Transcript already available.'
-            exit 0
-          fi
           python -m pip install -U faster-whisper
           python - <<'PY'
           from pathlib import Path
@@ -130,39 +121,34 @@ jobs:
           for s in segments:
               t=s.text.strip()
               if not t: continue
-              lines.append(t)
-              timed.append(f'[{s.start:8.2f}-{s.end:8.2f}] {t}')
+              lines.append(t); timed.append(f'[{s.start:8.2f}-{s.end:8.2f}] {t}')
           Path('out/transcript.txt').write_text('\n'.join(lines),encoding='utf-8')
           Path('out/transcript_timed.txt').write_text('\n'.join(timed),encoding='utf-8')
-          print('ASR language:',info.language,'prob:',info.language_probability,'segments:',len(lines))
+          print('ASR',info.language,info.language_probability,'segments',len(lines))
           PY
 
       - name: Print result
         if: always()
         shell: bash
         run: |
-          echo '===== META ====='
-          cat out/meta.json 2>/dev/null || true
+          echo '===== RELAYS ====='
+          cat out/relay_status.json 2>/dev/null || true
+          echo '===== SOURCE ====='
+          cat out/media_source.txt 2>/dev/null || true
           echo '===== TRANSCRIPT ====='
           cat out/transcript.txt 2>/dev/null || true
-          echo '===== VIEW DEBUG ====='
-          cat out/view.json 2>/dev/null || true
-          echo '===== PLAYER DEBUG ====='
-          cat out/player.json 2>/dev/null || true
-          echo '===== PLAYURL DEBUG ====='
-          cat out/playurl.json 2>/dev/null || true
 
-      - name: Upload text artifacts
+      - name: Upload result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bilibili-BV1Tit86MECG-api
+          name: bilibili-BV1Tit86MECG-relay
           path: |
-            out/meta.json
+            out/relay_status.json
+            out/candidates.json
+            out/media_source.txt
             out/transcript.txt
             out/transcript_timed.txt
-            out/view.json
-            out/player.json
-            out/playurl.json
+            out/*.txt
           if-no-files-found: warn
           retention-days: 1
