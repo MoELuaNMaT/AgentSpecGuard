@@ -1,0 +1,124 @@
+name: Temporary Bilibili Fetch BV1DCYx6yEGT
+
+on:
+  push:
+    branches:
+      - tmp-bilibili-BV1DCYx6yEGT
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install media tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg
+          python -m pip install -U requests faster-whisper yt-dlp
+
+      - name: Resolve metadata and download video
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          python - <<'PY'
+          import json, pathlib, requests, urllib.parse, subprocess
+          BV='BV1DCYx6yEGT'
+          PAGE=f'https://www.bilibili.com/video/{BV}/'
+          s=requests.Session(); s.headers.update({'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/152 Safari/537.36','Referer':'https://www.bilibili.com/'})
+
+          meta = {}
+          try:
+              r=s.get('https://api.bilibili.com/x/web-interface/view',params={'bvid':BV},timeout=20)
+              meta['bilibili_status']=r.status_code
+              meta['bilibili_view']=r.json() if 'json' in r.headers.get('content-type','') else {'text':r.text[:2000]}
+              d=(meta.get('bilibili_view') or {}).get('data') or {}
+              print('BILI_TITLE:', d.get('title'))
+              print('BILI_DESC:', d.get('desc'))
+          except Exception as e:
+              meta['bilibili_error']=repr(e)
+
+          api='https://api.mir6.com/api/bzjiexi?'+urllib.parse.urlencode({'url':PAGE,'type':'json'})
+          relay=None
+          try:
+              r=s.get(api,timeout=30); r.raise_for_status(); relay=r.json()
+              meta['relay']=relay
+              print('RELAY_TITLE:',relay.get('title'))
+              print('RELAY_DESC:',relay.get('desc'))
+          except Exception as e:
+              meta['relay_error']=repr(e)
+
+          pathlib.Path('out/meta.json').write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding='utf-8')
+
+          url=None
+          if isinstance(relay,dict):
+              items=relay.get('data') or []
+              if items and isinstance(items,list):
+                  url=items[0].get('video_url') or items[0].get('url')
+          if url:
+              pathlib.Path('out/media_source.txt').write_text(url,encoding='utf-8')
+              with s.get(url,stream=True,timeout=60) as rr:
+                  rr.raise_for_status()
+                  with open('out/video.mp4','wb') as f:
+                      for chunk in rr.iter_content(1024*1024):
+                          if chunk: f.write(chunk)
+              print('VIDEO_BYTES_RELAY:',pathlib.Path('out/video.mp4').stat().st_size)
+          else:
+              print('Relay unavailable; trying yt-dlp')
+              subprocess.run(['yt-dlp','--no-playlist','--merge-output-format','mp4','-f','bv*+ba/b','-o','out/video.%(ext)s',PAGE],check=True)
+              candidates=list(pathlib.Path('out').glob('video.*'))
+              if not candidates: raise SystemExit('No downloaded video')
+              src=candidates[0]
+              if src.suffix != '.mp4':
+                  subprocess.run(['ffmpeg','-hide_banner','-loglevel','warning','-y','-i',str(src),'-c','copy','out/video.mp4'],check=True)
+              print('VIDEO_BYTES_YTDLP:',pathlib.Path('out/video.mp4').stat().st_size)
+          PY
+
+      - name: Extract audio and keyframes
+        run: |
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 out/video.mp4 | tee out/duration.txt
+          ffmpeg -hide_banner -loglevel warning -y -i out/video.mp4 -vn -ac 1 -ar 16000 out/audio.wav
+          mkdir -p out/frames
+          ffmpeg -hide_banner -loglevel warning -y -i out/video.mp4 -vf "fps=1/90,scale=640:-2" -q:v 3 out/frames/frame_%03d.jpg
+
+      - name: Transcribe with Whisper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from faster_whisper import WhisperModel
+          model=WhisperModel('small',device='cpu',compute_type='int8')
+          segments,info=model.transcribe('out/audio.wav',language='zh',vad_filter=True,beam_size=5)
+          lines=[]; timed=[]
+          for s in segments:
+              t=s.text.strip()
+              if not t: continue
+              lines.append(t)
+              timed.append(f'[{s.start:8.2f}-{s.end:8.2f}] {t}')
+          Path('out/transcript.txt').write_text('\n'.join(lines),encoding='utf-8')
+          Path('out/transcript_timed.txt').write_text('\n'.join(timed),encoding='utf-8')
+          print('ASR_LANGUAGE:',info.language,'PROB:',info.language_probability,'SEGMENTS:',len(lines))
+          print('===== TRANSCRIPT =====')
+          print('\n'.join(lines))
+          PY
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilibili-BV1DCYx6yEGT-final
+          path: |
+            out/meta.json
+            out/media_source.txt
+            out/duration.txt
+            out/transcript.txt
+            out/transcript_timed.txt
+            out/frames/*.jpg
+          if-no-files-found: warn
+          retention-days: 1
