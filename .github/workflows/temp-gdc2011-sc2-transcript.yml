@@ -1,0 +1,98 @@
+name: temp-gdc2011-sc2-transcript
+
+on:
+  push:
+    branches:
+      - "tmp/gdc2011-sc2-transcript-20260918"
+
+jobs:
+  transcribe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install yt-dlp faster-whisper
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Fetch metadata and subtitle inventory
+        run: |
+          mkdir -p out
+          URL="https://www.bilibili.com/video/BV1Qk4y1w7BY/"
+          yt-dlp --dump-json --no-playlist --skip-download "$URL" > out/metadata.json || true
+          yt-dlp --list-subs --no-playlist "$URL" > out/subtitle_inventory.txt 2>&1 || true
+          yt-dlp --write-subs --write-auto-subs --all-subs --sub-format vtt --skip-download --no-playlist -o "out/video.%(ext)s" "$URL" > out/subtitle_download.log 2>&1 || true
+
+      - name: Download audio
+        run: |
+          URL="https://www.bilibili.com/video/BV1Qk4y1w7BY/"
+          yt-dlp -f "ba/b" --no-playlist -o "out/source_audio.%(ext)s" "$URL"
+          SRC="$(find out -maxdepth 1 -type f -name 'source_audio.*' | head -n 1)"
+          ffmpeg -y -i "$SRC" -t 1290 -vn -ac 1 -ar 16000 out/sc2_first_21m30s.wav
+
+      - name: Transcribe first 21m30s with Whisper
+        run: |
+          cat > /tmp/transcribe.py <<'PY'
+          from faster_whisper import WhisperModel
+          import json
+
+          model = WhisperModel("small.en", device="cpu", compute_type="int8")
+          segments, info = model.transcribe(
+              "out/sc2_first_21m30s.wav",
+              beam_size=5,
+              vad_filter=True,
+              condition_on_previous_text=True,
+          )
+
+          def ts(sec):
+              h = int(sec // 3600)
+              m = int((sec % 3600) // 60)
+              s = sec % 60
+              return f"{h:02d}:{m:02d}:{s:06.3f}"
+
+          rows = []
+          plain = []
+          with open("out/transcript_timestamped.txt", "w", encoding="utf-8") as f:
+              for seg in segments:
+                  text = seg.text.strip()
+                  if not text:
+                      continue
+                  row = {"start": seg.start, "end": seg.end, "text": text}
+                  rows.append(row)
+                  plain.append(text)
+                  f.write(f"[{ts(seg.start)} --> {ts(seg.end)}] {text}\n")
+
+          with open("out/transcript.txt", "w", encoding="utf-8") as f:
+              f.write("\n".join(plain))
+          with open("out/transcript.json", "w", encoding="utf-8") as f:
+              json.dump({
+                  "language": info.language,
+                  "language_probability": info.language_probability,
+                  "duration": info.duration,
+                  "segments": rows,
+              }, f, ensure_ascii=False, indent=2)
+          PY
+          python /tmp/transcribe.py
+
+      - name: Upload transcript artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gdc2011-sc2-transcript
+          path: |
+            out/metadata.json
+            out/subtitle_inventory.txt
+            out/subtitle_download.log
+            out/*.vtt
+            out/transcript.txt
+            out/transcript_timestamped.txt
+            out/transcript.json
+          if-no-files-found: warn
+          retention-days: 1
