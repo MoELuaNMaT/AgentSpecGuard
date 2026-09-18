@@ -26,14 +26,14 @@ jobs:
       - name: Fetch metadata and subtitle inventory
         run: |
           mkdir -p out
-          URL="https://www.bilibili.com/video/BV1Qk4y1w7BY/"
+          URL="https://www.gdcvault.com/play/1014514/AI-Navigation-It-s-Not"
           yt-dlp --dump-json --no-playlist --skip-download "$URL" > out/metadata.json || true
           yt-dlp --list-subs --no-playlist "$URL" > out/subtitle_inventory.txt 2>&1 || true
           yt-dlp --write-subs --write-auto-subs --all-subs --sub-format vtt --skip-download --no-playlist -o "out/video.%(ext)s" "$URL" > out/subtitle_download.log 2>&1 || true
 
       - name: Download audio
         run: |
-          URL="https://www.bilibili.com/video/BV1Qk4y1w7BY/"
+          URL="https://www.gdcvault.com/play/1014514/AI-Navigation-It-s-Not"
           yt-dlp -f "ba/b" --no-playlist -o "out/source_audio.%(ext)s" "$URL"
           SRC="$(find out -maxdepth 1 -type f -name 'source_audio.*' | head -n 1)"
           ffmpeg -y -i "$SRC" -t 1290 -vn -ac 1 -ar 16000 out/sc2_first_21m30s.wav
